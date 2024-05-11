@@ -38,6 +38,15 @@ def extract_title(text):
     return title
 
 
+def get_excluded_indices(document_texts, long_answer):
+    indices = list(range(1, len(document_texts) + 1))
+
+    # long_answer에 해당하는 인덱스를 제외
+    excluded_indices = [index for index in indices if document_texts[index - 1] != long_answer]
+
+    return excluded_indices
+
+
 if __name__ == "__main__":
     # dataset = load_dataset("natural_questions")
     """
@@ -53,7 +62,6 @@ if __name__ == "__main__":
     source_file = "/data/koo/datasets/long_context/v1.0-simplified_simplified-nq-train.jsonl"
     sampled_file = "/data/yjoonjang/datasets/long_context/v1.0-simlified-simplified-nq-train-sampled100.jsonl"
 
-    # JSON Lines 파일에서 처음 100개의 데이터 읽어오기
     with open(source_file, "r") as source:
         count = 0
         while True:
@@ -66,19 +74,29 @@ if __name__ == "__main__":
             document_text = dataset["document_text"]
             annotations = dataset["annotations"]
             if ((15900 < len(document_text)) and (len(document_text) < 16100)) and (annotations[0]["yes_no_answer"] != "None") and (annotations[0]["long_answer"]) and (len(annotations[0]["short_answers"]) >= 1):
+                document_text_tokens = document_text.split() # document_text를 토큰화
+
                 title = extract_title(document_text)
-                print(title)
-                document_text_tokens = document_text.split()
-                question = dataset["question_text"]
-                extracted_document_text_list = extract_text_from_p(document_text)
-                print(extracted_document_text_list)
-                print(f"total length of document_text: {len(document_text)}")
+                question_text = dataset["question_text"]
+                extracted_document_texts = extract_text_from_p(document_text)
+                # TODO extracted_document_texts 전처리 과정 반드시 필요!!!
 
                 long_answer_info = dataset["annotations"][0]["long_answer"]
                 short_answers_info = dataset["annotations"][0]["short_answers"]
-                print(f"question: {question}")
-                print(f"long_answer: {document_text_tokens[long_answer_info['start_token']:long_answer_info['end_token']]}")
-                print("short_answers: ")
+
+                short_answers = []
+                long_answer = " ".join(document_text_tokens[long_answer_info['start_token']:long_answer_info['end_token']])
+                long_answer = extract_text_from_p(long_answer)[0] # long_answer에서 P 태그 제거
                 for short_answer_info in short_answers_info:
-                    print(document_text_tokens[short_answer_info['start_token']:short_answer_info['end_token']])
+                    short_answer = document_text_tokens[short_answer_info['start_token']:short_answer_info['end_token']]
+                    short_answers.append(" ".join(short_answer))
+
+                indices_list = get_excluded_indices(extracted_document_texts, long_answer)
+
+                print(f"total length of document_text: {len(document_text)}")
+                print(f"document_text: {extracted_document_texts}")
+                print(f"related_information: {indices_list}")
+                print(f"question_text: {question_text}")
+                print(f"long_answer: {long_answer}")
+                print(f"short_answers: {short_answers}")
                 break
