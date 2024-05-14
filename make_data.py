@@ -5,7 +5,7 @@ import json
 import jsonlines
 import random
 import matplotlib.pyplot as plt
-from get_similarity_score import get_embedding, store_vector
+from get_similarity_score import get_embedding, store_vector, get_unrelated_data
 
 
 class TextFromPParser(HTMLParser):
@@ -175,6 +175,44 @@ def format_to_vector_dict(vector_id: str, values: list, metadata: dict):
         "metadata": metadata
     }
 
+def store_vector_to_pinecone(document_texts):
+    vectors = []
+    for i in range(len(document_texts)):
+        values = get_embedding(document_texts[i])
+        vector_id = f"{i}" # id는 반드시 str이어야 함
+        metadata = {
+            "rel_document_text_index": i
+        }
+        vector_dict = format_to_vector_dict(vector_id, values, metadata)
+        vectors.append(vector_dict)
+    store_vector(vectors)
+
+
+def save_unrel(rel_data_path, unrel_data_path):
+    with open(rel_data_path, 'r') as rel:
+        rel_datas = json.load(rel)
+        unrel_datas = []
+        topk=100
+
+        for index, rel_data in tqdm(enumerate(rel_datas)):
+            question_text = rel_data["question_text"]
+            # retrieve unsimilar document
+            question_text_embedding = get_embedding(question_text)
+            unrelated_data_index = get_unrelated_data(question_text_embedding, topk=topk)
+            unrelated_document = rel_datas[unrelated_data_index]["document_text"]
+            unrelated_document_url = rel_datas[unrelated_data_index]["document_url"]
+            unrel_data_dict = {
+                "title": rel_data["title"],
+                "document_text": unrelated_document,
+                "question_text": question_text,
+                "annotations": rel_data["annotations"],
+                "document_url": unrelated_document_url,
+                "example_id": f"{index}_unrel"
+            }
+            unrel_datas.append(unrel_data_dict)
+
+        save_json(unrel_data_path, unrel_datas)
+
 
 if __name__ == "__main__":
     source_file = "/data/koo/datasets/long_context/v1.0-simplified_simplified-nq-train.jsonl"
@@ -185,54 +223,7 @@ if __name__ == "__main__":
     document_texts_path = "/data/yjoonjang/datasets/long_context_dev/16k_rel_document_texts_rs=42.json"
     unrel_data_path = "/data/yjoonjang/datasets/long_context/16k_unrel.json"
 
-    with open(document_texts_path, 'r') as f:
-        document_texts = json.load(f)
-        vectors = []
-        for i in range(len(document_texts)):
-            values = get_embedding(document_texts[i])
-            vector_id = f"{i}"
-            metadata = {
-                "rel_document_text_index": i
-            }
-            vector_dict = format_to_vector_dict(vector_id, values, metadata)
-            vectors.append(vector_dict)
-        store_vector(vectors)
 
-    # with open(rel_data_path, 'r') as f:
-    #     source_datasets = json.load(f)
-    #     queries = []
-    #     passages = []
-    #     formatted_unrel_datasets = []
-    #
-    #     # task = 'Given a query, retrieve relevant passages that answer the query'
-    #     for i, source_dataset in enumerate(source_datasets):
-    #         question = source_dataset["question_text"]
-    #         documents = source_dataset["document_text"]
-    #
-    #         # Each query must come with a one-sentence instruction that describes the task
-    #         queries.append(get_detailed_instruct(task, question))
-    #         passages.append(documents)
-    #     lowest_score_indices = get_similarity_score_batched(queries, passages)
-    #
-    #     for i, source_dataset in enumerate(source_datasets):
-    #         title = source_dataset["title"]
-    #         document_text = source_dataset[lowest_score_indices[i]]["document_text"]
-    #         question_text = source_dataset["question_text"]
-    #         annotations = source_dataset["annotations"]
-    #         document_url = source_dataset["document_url"]
-    #         example_id = f"{i}_unrel"
-    #
-    #         formatted_unrel_data = {
-    #             "title": title,
-    #             "document_text": document_text,
-    #             "question_text": question_text,
-    #             "annotations": annotations,
-    #             "document_url": document_url,
-    #             "example_id": example_id
-    #         }
-    #
-    #         formatted_unrel_datasets.append(formatted_unrel_data)
-    #     save_json(unrel_data_path, formatted_unrel_datasets)
 
 
 

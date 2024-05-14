@@ -28,8 +28,12 @@ def get_embedding(text, model="text-embedding-3-large"):
     response = response[0].embedding
     return response
 
-def store_vector(vectors: list):
-    index.upsert(vectors=vectors)
+
+
+def get_unrelated_data(vector: list, topk: int):
+    unrelated_data = index.query(vector=vector, top_k=topk)
+    unrelated_data_index = int(unrelated_data["matches"][-1]["id"])
+    return unrelated_data_index
 
 # def get_similarity_score_batched(queries, documents, batch_size=1):
 #     tokenizer = AutoTokenizer.from_pretrained('Salesforce/SFR-Embedding-Mistral')
