@@ -5,6 +5,7 @@ import json
 import jsonlines
 import random
 import matplotlib.pyplot as plt
+from get_similarity_score import get_embedding, store_vector
 
 
 class TextFromPParser(HTMLParser):
@@ -87,22 +88,17 @@ def save_rel(input_file, output_file):
     with open(input_file, "r") as file:
         formatted_datasets = []
         datasets = json.load(file)
-        # while True:
-        #     line = source.readline()
-        #     if not line:
-        #         break
-        #
-        #     dataset = json.loads(line.strip())
-        random.seed(42)
-        random_datasets = random.sample(datasets, 100)
+
+        # random sampling 할거면 활성화
+        # random.seed(42)
+        # random_datasets = random.sample(datasets, 100)
 
         for index, dataset in enumerate(datasets):
             document_text = dataset["document_text"]
-            annotations = dataset["annotations"]
 
             # check if 15.9K < len(document_text) <= 16K & exists (long_answer & short_answers) & "yes_no_answer": "NONE"
+            # annotations = dataset["annotations"]
             # if ((15900 <= len(document_text)) and (len(document_text) <= 16000)) and (annotations[0]["long_answer"]) and (len(annotations[0]["short_answers"]) >= 1) and (annotations[0]["yes_no_answer"] == "NONE"):
-
 
             title = extract_title(document_text)
             question_text = dataset["question_text"]
@@ -169,24 +165,78 @@ def sample_data(input_file, output_file):
         save_json(output_file, formatted_datasets)
 
 
+def get_detailed_instruct(task_description: str, query: str) -> str:
+    return f'Instruct: {task_description}\nQuery: {query}'
+
+def format_to_vector_dict(vector_id: str, values: list, metadata: dict):
+    return {
+        "id": vector_id,
+        "values": values,
+        "metadata": metadata
+    }
+
+
 if __name__ == "__main__":
     source_file = "/data/koo/datasets/long_context/v1.0-simplified_simplified-nq-train.jsonl"
     filtered_data_path = "/data/yjoonjang/datasets/long_context_dev/v1.0-simlified-simplified-nq-train-len=16k.json" # document_text 길이가 15.9K 이상 16K 이하인 문서들만 + long_answer 답이 <P> 태그로 시작하는 것들만
-    total_rel_data_path = "/data/yjoonjang/datasets/long_context/total_rel_tailed.json"
+    total_rel_data_path = "/data/yjoonjang/datasets/long_context/total_rel.json"
+    total_rel_tailed_data_path = "/data/yjoonjang/datasets/long_context/total_rel_tailed.json"
     rel_data_path = "/data/yjoonjang/datasets/long_context/16k_rel.json"
-    save_data_path = "datasets/document_texts_rs=42.json"
+    document_texts_path = "/data/yjoonjang/datasets/long_context_dev/16k_rel_document_texts_rs=42.json"
+    unrel_data_path = "/data/yjoonjang/datasets/long_context/16k_unrel.json"
 
-    # save_rel(filtered_data_path, total_rel_data_path)
-    # get_document_length_statistics(total_rel_data_path)
-    sample_data(total_rel_data_path, rel_data_path)
+    with open(document_texts_path, 'r') as f:
+        document_texts = json.load(f)
+        vectors = []
+        for i in range(len(document_texts)):
+            values = get_embedding(document_texts[i])
+            vector_id = f"{i}"
+            metadata = {
+                "rel_document_text_index": i
+            }
+            vector_dict = format_to_vector_dict(vector_id, values, metadata)
+            vectors.append(vector_dict)
+        store_vector(vectors)
 
-    # with open(total_rel_data_path) as f:
-    #     datasets = json.load(f)
-    #     document_texts = []
-    #     for dataset in datasets:
-    #         for document_text in dataset["document_text"]:
-    #             if (len(document_text) > 40) and (len(document_text) <= 50):
-    #                 document_texts.append(document_text)
-    #     print(document_texts)
+    # with open(rel_data_path, 'r') as f:
+    #     source_datasets = json.load(f)
+    #     queries = []
+    #     passages = []
+    #     formatted_unrel_datasets = []
+    #
+    #     # task = 'Given a query, retrieve relevant passages that answer the query'
+    #     for i, source_dataset in enumerate(source_datasets):
+    #         question = source_dataset["question_text"]
+    #         documents = source_dataset["document_text"]
+    #
+    #         # Each query must come with a one-sentence instruction that describes the task
+    #         queries.append(get_detailed_instruct(task, question))
+    #         passages.append(documents)
+    #     lowest_score_indices = get_similarity_score_batched(queries, passages)
+    #
+    #     for i, source_dataset in enumerate(source_datasets):
+    #         title = source_dataset["title"]
+    #         document_text = source_dataset[lowest_score_indices[i]]["document_text"]
+    #         question_text = source_dataset["question_text"]
+    #         annotations = source_dataset["annotations"]
+    #         document_url = source_dataset["document_url"]
+    #         example_id = f"{i}_unrel"
+    #
+    #         formatted_unrel_data = {
+    #             "title": title,
+    #             "document_text": document_text,
+    #             "question_text": question_text,
+    #             "annotations": annotations,
+    #             "document_url": document_url,
+    #             "example_id": example_id
+    #         }
+    #
+    #         formatted_unrel_datasets.append(formatted_unrel_data)
+    #     save_json(unrel_data_path, formatted_unrel_datasets)
+
+
+
+
+
 
 
