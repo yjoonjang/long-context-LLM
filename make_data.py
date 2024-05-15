@@ -213,6 +213,57 @@ def save_unrel(rel_data_path, unrel_data_path):
 
         save_json(unrel_data_path, unrel_datas)
 
+def save_mixed(rel_data_path, unrel_data_path, mixed_data_path, random_seed):
+    random_seed = random_seed
+    random.seed(random_seed)
+    mixed_data_list = []
+
+    with open(rel_data_path, "r") as rel, open(unrel_data_path, "r") as unrel:
+        rel_datasets = json.load(rel)
+        unrel_datasets = json.load(unrel)
+        total_len = len(rel_datasets)
+
+        for i in range(total_len):
+            rel_dataset = rel_datasets[i]
+            unrel_dataset = unrel_datasets[i]
+
+            rel_document = rel_dataset["document_text"]
+            unrel_document = unrel_dataset["document_text"]
+            rel_len = len(rel_document)
+            unrel_len = len(unrel_document)
+            sample_rel_len = round(rel_len * 0.5)
+            sample_unrel_len = round(unrel_len * 0.5)
+            related_information = list(range(sample_rel_len))
+
+            gold_document = rel_dataset["annotations"]["long_answer"]
+            rel_document.remove(gold_document)
+
+            sampled_rel = random.sample(rel_document, (sample_rel_len-1))
+            sampled_rel.append(gold_document)
+            random.shuffle(sampled_rel)
+            sampled_unrel = random.sample(unrel_document, sample_unrel_len)
+            sampled_rel.extend(sampled_unrel)
+
+            formatted_mixed_data_dict = {
+                "title": rel_dataset["title"],
+                "document_text": sampled_rel,
+                "related_information": related_information,
+                "question_text": rel_dataset["question_text"],
+                "annotations": rel_dataset["annotations"],
+                "document_url": {
+                    "rel": rel_dataset["document_url"],
+                    "unrel": unrel_dataset["document_url"]
+                },
+                "example_id": f"{i}_mix"
+            }
+            mixed_data_list.append(formatted_mixed_data_dict)
+
+        save_json(mixed_data_path, mixed_data_list)
+
+
+
+
+
 
 if __name__ == "__main__":
     source_file = "/data/koo/datasets/long_context/v1.0-simplified_simplified-nq-train.jsonl"
@@ -222,6 +273,11 @@ if __name__ == "__main__":
     rel_data_path = "/data/yjoonjang/datasets/long_context/16k_rel.json"
     document_texts_path = "/data/yjoonjang/datasets/long_context_dev/16k_rel_document_texts_rs=42.json"
     unrel_data_path = "/data/yjoonjang/datasets/long_context/16k_unrel.json"
+    mixed_data_path = "/data/yjoonjang/datasets/long_context/16k_mixed.json"
+
+    # save_mixed(rel_data_path, unrel_data_path, mixed_data_path, random_seed=42)
+
+
 
 
 

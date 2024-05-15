@@ -28,7 +28,8 @@ def get_embedding(text, model="text-embedding-3-large"):
     response = response[0].embedding
     return response
 
-
+def store_vector(vectors: list):
+    index.upsert(vectors)
 
 def get_unrelated_data(vector: list, topk: int):
     unrelated_data = index.query(vector=vector, top_k=topk)
