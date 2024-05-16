@@ -6,6 +6,8 @@ import jsonlines
 import random
 import matplotlib.pyplot as plt
 from get_similarity_score import get_embedding, store_vector, get_unrelated_data
+import torch
+import torch.nn as nn
 
 
 class TextFromPParser(HTMLParser):
@@ -213,7 +215,8 @@ def save_unrel(rel_data_path, unrel_data_path):
 
         save_json(unrel_data_path, unrel_datas)
 
-def save_mixed(rel_data_path, unrel_data_path, mixed_data_path, random_seed):
+# rel data에서 반, unrel data에서 반 sampling
+def save_mixed(rel_data_path, unrel_data_path, mixed_data_path, random_seed=42):
     random_seed = random_seed
     random.seed(random_seed)
     mixed_data_list = []
@@ -231,16 +234,18 @@ def save_mixed(rel_data_path, unrel_data_path, mixed_data_path, random_seed):
             unrel_document = unrel_dataset["document_text"]
             rel_len = len(rel_document)
             unrel_len = len(unrel_document)
+
+            # 길이가 반이 되도록 sampling
             sample_rel_len = round(rel_len * 0.5)
             sample_unrel_len = round(unrel_len * 0.5)
             related_information = list(range(sample_rel_len))
 
+            # sampling하는 문서에서 gold 제외. 유A무, 무A유 의 형식으로 배치될 것이기 때문.
             gold_document = rel_dataset["annotations"]["long_answer"]
             rel_document.remove(gold_document)
 
-            sampled_rel = random.sample(rel_document, (sample_rel_len-1))
-            sampled_rel.append(gold_document)
-            random.shuffle(sampled_rel)
+            # rel, unrel 샘플링
+            sampled_rel = random.sample(rel_document, sample_rel_len)
             sampled_unrel = random.sample(unrel_document, sample_unrel_len)
             sampled_rel.extend(sampled_unrel)
 
@@ -260,6 +265,71 @@ def save_mixed(rel_data_path, unrel_data_path, mixed_data_path, random_seed):
 
         save_json(mixed_data_path, mixed_data_list)
 
+# for 8k, 4k
+def get_similar_paragraphs(rel_data_path, unrel_data_path, random_seed=42):
+    random.seed(random_seed)
+    datasets_8k = []
+    datasets_4k = []
+
+    with open(rel_data_path, 'r') as rel_16k, open(unrel_data_path, 'r') as unrel_16k:
+        rel_16k_datasets = json.load(rel_16k)
+        unrel_16k_datasets = json.load(unrel_16k)
+        cos = nn.CosineSimilarity(dim=-1)
+
+        for rel_16k_dataset in rel_16k_datasets:
+            # gold_text =
+            question_text = rel_16k_dataset["question_text"]
+            question_embedding = torch.tensor(get_embedding(question_text)).unsqueeze(0)
+
+            document_texts = rel_16k_dataset["document_text"]
+            document_text_embeddings = []
+            paragraph_len = 0
+            for document_text in document_texts:
+                # document_texts (paragraphs) length
+                paragraph_len += len(document_text)
+
+                document_text_embedding = torch.tensor(get_embedding(document_text))
+                document_text_embeddings.append(document_text_embedding)
+
+            document_text_embeddings = torch.stack(document_text_embeddings)
+
+            similarity = cos(question_embedding, document_text_embeddings)
+
+            # 유사도와 길이를 함께 저장
+            sim_len_pairs = list(zip(similarity.tolist(), document_texts))
+
+            # 유사도에 따라 정렬
+            sim_len_pairs.sort(key=lambda x: x[0], reverse=True)
+
+            selected_texts_8k = []
+            selected_texts_4k = []
+
+            selected_len = 0
+            half_paragraph_len = paragraph_len * 0.5
+            quarter_paragraph_len = paragraph_len * 0.25
+
+            for sim, text in sim_len_pairs:
+                text_len = len(text)
+                if selected_len + text_len > half_paragraph_len:
+                    break
+                selected_texts_8k.append(text)
+                selected_len += text_len
+
+            for sim, text in sim_len_pairs:
+                text_len = len(text)
+                if selected_len + text_len > quarter_paragraph_len:
+                    break
+                selected_texts_4k.append(text)
+                selected_len += text_len
+
+            datasets_8k_dict = {
+
+            }
+
+
+
+
+
 
 
 
@@ -276,6 +346,8 @@ if __name__ == "__main__":
     mixed_data_path = "/data/yjoonjang/datasets/long_context/16k_mixed.json"
 
     # save_mixed(rel_data_path, unrel_data_path, mixed_data_path, random_seed=42)
+    # get_similar_paragraphs(rel_data_path, unrel_data_path)
+    get_document_length_statistics(filtered_data_path)
 
 
 
