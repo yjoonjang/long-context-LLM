@@ -215,9 +215,28 @@ def save_unrel(rel_data_path, unrel_data_path):
 
         save_json(unrel_data_path, unrel_datas)
 
+
+def get_sampled_texts(document_texts, sample_len, random_seed=42):
+    random.seed(random_seed)
+    random.shuffle(document_texts)
+    current_len = 0
+    sampled_texts = []
+
+    for text in document_texts:
+        if current_len + len(text) <= sample_len:
+            sampled_texts.append(text)
+            current_len += len(text)
+        else:
+            # If adding the full text exceeds sample_len, truncate the text
+            remaining_len = sample_len - current_len
+            if remaining_len > 0:
+                sampled_texts.append(text[:remaining_len])
+            break
+
+    return sampled_texts
+
 # rel data에서 반, unrel data에서 반 sampling
 def save_mixed(rel_data_path, unrel_data_path, mixed_data_path, random_seed=42):
-    random_seed = random_seed
     random.seed(random_seed)
     mixed_data_list = []
 
@@ -232,22 +251,26 @@ def save_mixed(rel_data_path, unrel_data_path, mixed_data_path, random_seed=42):
 
             rel_document = rel_dataset["document_text"]
             unrel_document = unrel_dataset["document_text"]
-            rel_len = len(rel_document)
-            unrel_len = len(unrel_document)
 
-            # 길이가 반이 되도록 sampling
-            sample_rel_len = round(rel_len * 0.5)
-            sample_unrel_len = round(unrel_len * 0.5)
-            related_information = list(range(sample_rel_len))
+            # Calculate total length of all strings in the list
+            total_rel_len = sum(len(text) for text in rel_document)
+            total_unrel_len = sum(len(text) for text in unrel_document)
 
-            # sampling하는 문서에서 gold 제외. 유A무, 무A유 의 형식으로 배치될 것이기 때문.
+            # Half of the total length
+            sample_rel_len = total_rel_len // 2
+            sample_unrel_len = total_unrel_len // 2
+
+            # Remove gold document from rel_document
             gold_document = rel_dataset["annotations"]["long_answer"]
-            rel_document.remove(gold_document)
+            if gold_document in rel_document:
+                rel_document.remove(gold_document)
 
-            # rel, unrel 샘플링
-            sampled_rel = random.sample(rel_document, sample_rel_len)
-            sampled_unrel = random.sample(unrel_document, sample_unrel_len)
+            # Get sampled texts
+            sampled_rel = get_sampled_texts(rel_document, sample_rel_len, random_seed)
+            sampled_unrel = get_sampled_texts(unrel_document, sample_unrel_len, random_seed)
             sampled_rel.extend(sampled_unrel)
+
+            related_information = list(range(len(sampled_rel)))
 
             formatted_mixed_data_dict = {
                 "title": rel_dataset["title"],
@@ -265,89 +288,145 @@ def save_mixed(rel_data_path, unrel_data_path, mixed_data_path, random_seed=42):
 
         save_json(mixed_data_path, mixed_data_list)
 
-# for 8k, 4k
-def get_similar_paragraphs(rel_data_path, unrel_data_path, random_seed=42):
-    random.seed(random_seed)
-    datasets_8k = []
-    datasets_4k = []
+def get_8k_4k_dataset(dataset, cos, is_rel=True):
+    processed_data_8k = []
+    processed_data_4k = []
 
-    with open(rel_data_path, 'r') as rel_16k, open(unrel_data_path, 'r') as unrel_16k:
-        rel_16k_datasets = json.load(rel_16k)
-        unrel_16k_datasets = json.load(unrel_16k)
-        cos = nn.CosineSimilarity(dim=-1)
+    for index, data in tqdm(enumerate(dataset)):
+        gold_text = data["annotations"]["long_answer"]
+        question_text = data["question_text"]
+        question_embedding = torch.tensor(get_embedding(question_text)).unsqueeze(0)
 
-        for rel_16k_dataset in rel_16k_datasets:
-            # gold_text =
-            question_text = rel_16k_dataset["question_text"]
-            question_embedding = torch.tensor(get_embedding(question_text)).unsqueeze(0)
+        document_texts = data["document_text"]
+        document_text_embeddings = []
 
-            document_texts = rel_16k_dataset["document_text"]
-            document_text_embeddings = []
-            paragraph_len = 0
-            for document_text in document_texts:
-                # document_texts (paragraphs) length
-                paragraph_len += len(document_text)
+        paragraph_len = sum(len(text) for text in document_texts)
+        for document_text in document_texts:
+            document_text_embedding = torch.tensor(get_embedding(document_text))
+            document_text_embeddings.append(document_text_embedding)
 
-                document_text_embedding = torch.tensor(get_embedding(document_text))
-                document_text_embeddings.append(document_text_embedding)
+        document_text_embeddings = torch.stack(document_text_embeddings)
 
-            document_text_embeddings = torch.stack(document_text_embeddings)
-
+        with torch.no_grad():
             similarity = cos(question_embedding, document_text_embeddings)
 
-            # 유사도와 길이를 함께 저장
-            sim_len_pairs = list(zip(similarity.tolist(), document_texts))
+        sim_len_pairs = list(zip(similarity.tolist(), document_texts))
 
-            # 유사도에 따라 정렬
+        if is_rel:
             sim_len_pairs.sort(key=lambda x: x[0], reverse=True)
+        else:
+            sim_len_pairs.sort(key=lambda x: x[0])
 
-            selected_texts_8k = []
-            selected_texts_4k = []
+        selected_texts_8k = [gold_text] if is_rel else []
+        selected_texts_4k = [gold_text] if is_rel else []
 
-            selected_len = 0
-            half_paragraph_len = paragraph_len * 0.5
-            quarter_paragraph_len = paragraph_len * 0.25
+        selected_len_8k = len(gold_text) if is_rel else 0
+        selected_len_4k = len(gold_text) if is_rel else 0
+        half_paragraph_len = paragraph_len * 0.5
+        quarter_paragraph_len = paragraph_len * 0.25
 
-            for sim, text in sim_len_pairs:
+        for sim, text in sim_len_pairs:
+            if text != gold_text:
                 text_len = len(text)
-                if selected_len + text_len > half_paragraph_len:
+                if selected_len_8k + text_len <= half_paragraph_len:
+                    selected_texts_8k.append(text)
+                    selected_len_8k += text_len
+                else:
+                    remaining_len = half_paragraph_len - selected_len_8k
+                    if remaining_len > 0:
+                        selected_texts_8k.append(text[:int(remaining_len)])
                     break
-                selected_texts_8k.append(text)
-                selected_len += text_len
 
-            for sim, text in sim_len_pairs:
+        for sim, text in sim_len_pairs:
+            if text != gold_text:
                 text_len = len(text)
-                if selected_len + text_len > quarter_paragraph_len:
+                if selected_len_4k + text_len <= quarter_paragraph_len:
+                    selected_texts_4k.append(text)
+                    selected_len_4k += text_len
+                else:
+                    remaining_len = quarter_paragraph_len - selected_len_4k
+                    if remaining_len > 0:
+                        selected_texts_4k.append(text[:int(remaining_len)])
                     break
-                selected_texts_4k.append(text)
-                selected_len += text_len
 
-            datasets_8k_dict = {
+        random.shuffle(selected_texts_8k)
+        random.shuffle(selected_texts_4k)
 
-            }
+        dataset_dict_8k = {
+            "title": data["title"],
+            "document_text": selected_texts_8k,
+            "question_text": data["question_text"],
+            "annotations": data["annotations"],
+            "document_url": data["document_url"],
+            "example_id": f"{index}_{'rel' if is_rel else 'unrel'}"
+        }
+
+        dataset_dict_4k = {
+            "title": data["title"],
+            "document_text": selected_texts_4k,
+            "question_text": data["question_text"],
+            "annotations": data["annotations"],
+            "document_url": data["document_url"],
+            "example_id": f"{index}_{'rel' if is_rel else 'unrel'}"
+        }
+
+        if is_rel:
+            indices_list_8k = get_excluded_indices(selected_texts_8k, gold_text)
+            indices_list_4k = get_excluded_indices(selected_texts_4k, gold_text)
+            dataset_dict_8k["related_information"] = indices_list_8k
+            dataset_dict_4k["related_information"] = indices_list_4k
+
+        processed_data_8k.append(dataset_dict_8k)
+        processed_data_4k.append(dataset_dict_4k)
+
+    return processed_data_8k, processed_data_4k
 
 
+def save_8k_4k(
+        rel_data_16k_path,
+        unrel_data_16k_path,
+        rel_data_8k_path,
+        unrel_data_8k_path,
+        rel_data_4k_path,
+        unrel_data_4k_path,
+        random_seed=42
+    ):
+    random.seed(random_seed)
+    cos = nn.CosineSimilarity(dim=-1)
 
+    with open(rel_data_16k_path, 'r') as rel_16k, open(unrel_data_16k_path, 'r') as unrel_16k:
+        rel_16k_datasets = json.load(rel_16k)
+        unrel_16k_datasets = json.load(unrel_16k)
 
+        rel_datasets_8k, rel_datasets_4k = get_8k_4k_dataset(rel_16k_datasets, cos, is_rel=True)
+        unrel_datasets_8k, unrel_datasets_4k = get_8k_4k_dataset(unrel_16k_datasets, cos, is_rel=False)
 
-
-
-
+        save_json(rel_data_8k_path, rel_datasets_8k)
+        save_json(rel_data_4k_path, rel_datasets_4k)
+        save_json(unrel_data_8k_path, unrel_datasets_8k)
+        save_json(unrel_data_4k_path, unrel_datasets_4k)
 
 
 if __name__ == "__main__":
     source_file = "/data/koo/datasets/long_context/v1.0-simplified_simplified-nq-train.jsonl"
     filtered_data_path = "/data/yjoonjang/datasets/long_context_dev/v1.0-simlified-simplified-nq-train-len=16k.json" # document_text 길이가 15.9K 이상 16K 이하인 문서들만 + long_answer 답이 <P> 태그로 시작하는 것들만
-    total_rel_data_path = "/data/yjoonjang/datasets/long_context/total_rel.json"
-    total_rel_tailed_data_path = "/data/yjoonjang/datasets/long_context/total_rel_tailed.json"
-    rel_data_path = "/data/yjoonjang/datasets/long_context/16k_rel.json"
+    total_rel_data_path = "/data/yjoonjang/datasets/long_context_dev/total_rel.json"
+    total_rel_tailed_data_path = "/data/yjoonjang/datasets/long_context_dev/total_rel_tailed.json"
     document_texts_path = "/data/yjoonjang/datasets/long_context_dev/16k_rel_document_texts_rs=42.json"
-    unrel_data_path = "/data/yjoonjang/datasets/long_context/16k_unrel.json"
-    mixed_data_path = "/data/yjoonjang/datasets/long_context/16k_mixed.json"
+    rel_data_16k_path = "/data/yjoonjang/datasets/long_context/16k_rel.json"
+    rel_data_8k_path = "/data/yjoonjang/datasets/long_context/8k_rel.json"
+    rel_data_4k_path = "/data/yjoonjang/datasets/long_context/4k_rel.json"
+    unrel_data_16k_path = "/data/yjoonjang/datasets/long_context/16k_unrel.json"
+    unrel_data_8k_path = "/data/yjoonjang/datasets/long_context/8k_unrel.json"
+    unrel_data_4k_path = "/data/yjoonjang/datasets/long_context/4k_unrel.json"
+    mixed_data_16k_path = "/data/yjoonjang/datasets/long_context/16k_mixed.json"
+    mixed_data_8k_path = "/data/yjoonjang/datasets/long_context/8k_mixed.json"
+    mixed_data_4k_path = "/data/yjoonjang/datasets/long_context/4k_mixed.json"
 
-    # save_mixed(rel_data_path, unrel_data_path, mixed_data_path, random_seed=42)
-    # get_similar_paragraphs(rel_data_path, unrel_data_path)
-    get_document_length_statistics(filtered_data_path)
+
+    # save_mixed(rel_data_8k_path, unrel_data_8k_path, mixed_data_8k_path, random_seed=42)
+    # save_mixed(rel_data_4k_path, unrel_data_4k_path, mixed_data_4k_path, random_seed=42)
+    # save_8k_4k(rel_data_16k_path, unrel_data_16k_path, rel_data_8k_path, unrel_data_8k_path, rel_data_4k_path, unrel_data_4k_path)
 
 
 
