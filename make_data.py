@@ -268,9 +268,11 @@ def save_mixed(rel_data_path, unrel_data_path, mixed_data_path, random_seed=42):
             # Get sampled texts
             sampled_rel = get_sampled_texts(rel_document, sample_rel_len, random_seed)
             sampled_unrel = get_sampled_texts(unrel_document, sample_unrel_len, random_seed)
-            sampled_rel.extend(sampled_unrel)
 
             related_information = list(range(len(sampled_rel)))
+
+            sampled_rel.extend(sampled_unrel)
+
 
             formatted_mixed_data_dict = {
                 "title": rel_dataset["title"],
