@@ -1,3 +1,5 @@
+import os
+
 from datasets import load_dataset
 from tqdm import tqdm
 from html.parser import HTMLParser
@@ -92,10 +94,10 @@ def save_rel(input_file, output_file):
         datasets = json.load(file)
 
         # random sampling 할거면 활성화
-        # random.seed(42)
-        # random_datasets = random.sample(datasets, 100)
+        random.seed(42)
+        random_datasets = random.sample(datasets, 100)
 
-        for index, dataset in enumerate(datasets):
+        for index, dataset in enumerate(random_datasets):
             document_text = dataset["document_text"]
 
             # check if 15.9K < len(document_text) <= 16K & exists (long_answer & short_answers) & "yes_no_answer": "NONE"
@@ -408,6 +410,18 @@ def save_8k_4k(
         save_json(unrel_data_8k_path, unrel_datasets_8k)
         save_json(unrel_data_4k_path, unrel_datasets_4k)
 
+def check_duplicated(input_file_path):
+    with open(input_file_path, 'r') as f:
+        datasets = json.load(f)
+        title_list = []
+
+        for dataset in datasets:
+            title = dataset["title"]
+            if title in title_list:
+                print(f"{title} duplicated!!!!")
+            else:
+                title_list.append(title)
+
 
 if __name__ == "__main__":
     source_file = "/data/koo/datasets/long_context/v1.0-simplified_simplified-nq-train.jsonl"
@@ -425,10 +439,22 @@ if __name__ == "__main__":
     mixed_data_8k_path = "/data/yjoonjang/datasets/long_context/8k_mixed.json"
     mixed_data_4k_path = "/data/yjoonjang/datasets/long_context/4k_mixed.json"
 
+    # save_rel(filtered_data_path, rel_data_16k_path)
+    # save_unrel(rel_data_16k_path, unrel_data_16k_path)
+    # save_mixed(rel_data_16k_path, unrel_data_16k_path, mixed_data_16k_path, random_seed=42)
 
+    # save_8k_4k(rel_data_16k_path, unrel_data_16k_path, rel_data_8k_path, unrel_data_8k_path, rel_data_4k_path, unrel_data_4k_path)
     # save_mixed(rel_data_8k_path, unrel_data_8k_path, mixed_data_8k_path, random_seed=42)
     # save_mixed(rel_data_4k_path, unrel_data_4k_path, mixed_data_4k_path, random_seed=42)
-    # save_8k_4k(rel_data_16k_path, unrel_data_16k_path, rel_data_8k_path, unrel_data_8k_path, rel_data_4k_path, unrel_data_4k_path)
+
+    # Check if duplicated
+    base_dir = "/data/yjoonjang/datasets/long_context"
+    for file_name in os.listdir(base_dir):
+        print(f"Checking {file_name}...")
+        file_path = os.path.join(base_dir, file_name)
+        # check_duplicated(file_path)
+        get_document_length_statistics(file_path)
+        print("\n\n")
 
 
 
