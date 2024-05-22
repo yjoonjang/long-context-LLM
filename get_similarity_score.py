@@ -20,7 +20,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 pc = Pinecone(api_key=PINECONE_API_KEY)
-index = pc.Index("large-context-llm")
+index = pc.Index("long-context-llm")
 
 def get_embedding(text, model="text-embedding-3-large"):
     # text = text.replace("\n", " ")
@@ -28,11 +28,31 @@ def get_embedding(text, model="text-embedding-3-large"):
     response = response[0].embedding
     return response
 
-def store_vector(vectors: list):
-    index.upsert(vectors)
+def store_vector(vectors: list, namespace: str):
+    index.upsert(vectors=vectors, namespace=namespace)
 
-def get_unrelated_data(vector: list, topk: int):
-    unrelated_data = index.query(vector=vector, top_k=topk)
+def format_to_vector_dict(vector_id: str, values: list, metadata: dict):
+    return {
+        "id": vector_id,
+        "values": values,
+        "metadata": metadata,
+    }
+
+def store_vector_to_pinecone(document_texts, namespace):
+    vectors = []
+    for i in range(len(document_texts)):
+        document = "\n".join(document_texts[i])
+        values = get_embedding(document)
+        vector_id = f"{i}" # id는 반드시 str이어야 함
+        metadata = {
+            "rel_document_text_index": i
+        }
+        vector_dict = format_to_vector_dict(vector_id, values, metadata)
+        vectors.append(vector_dict)
+    store_vector(vectors, namespace)
+
+def get_unrelated_data(vector: list, topk: int, namespace: str):
+    unrelated_data = index.query(namespace=namespace, vector=vector, top_k=topk)
     unrelated_data_index = int(unrelated_data["matches"][-1]["id"])
     return unrelated_data_index
 

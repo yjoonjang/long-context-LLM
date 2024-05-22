@@ -7,7 +7,7 @@ import json
 import jsonlines
 import random
 import matplotlib.pyplot as plt
-from get_similarity_score import get_embedding, store_vector, get_unrelated_data
+from get_similarity_score import get_embedding, store_vector, get_unrelated_data, store_vector_to_pinecone
 import torch
 import torch.nn as nn
 
@@ -73,6 +73,7 @@ def save_json(file_name, dataset):
         json.dump(dataset, file, ensure_ascii=False, indent=4)
 
 def get_document_length_statistics(file_name):
+    print(f"Statistics for {file_name}: ")
     with open(file_name, "r") as file:
         datasets = json.load(file)
         document_text_lengths = []
@@ -86,7 +87,7 @@ def get_document_length_statistics(file_name):
             document_text_lengths.append(len(total_document_text))
         print(f"MAX: {max(document_text_lengths)}")
         print(f"MIN: {min(document_text_lengths)}")
-        print(f"AVG: {sum(document_text_lengths) / len(document_text_lengths)}")
+        print(f"AVG: {sum(document_text_lengths) / len(document_text_lengths)}\n")
 
 def save_rel(input_file, output_file):
     with open(input_file, "r") as file:
@@ -143,6 +144,64 @@ def save_rel(input_file, output_file):
             formatted_datasets.append(formatted_data_dict)
     save_json(output_file, formatted_datasets)
 
+# len(related_information) 가 8개 이상인 것 중에서만 100개 샘플링
+def save_long_rel(input_file, output_file, random_seed=42):
+    with open(input_file, "r") as file:
+        long_datasets = []
+        datasets = json.load(file)
+
+        # random sampling 할거면 활성화
+        random.seed(random_seed)
+
+        for index, dataset in enumerate(datasets):
+            document_text = dataset["document_text"]
+
+            # check if 15.9K < len(document_text) <= 16K & exists (long_answer & short_answers) & "yes_no_answer": "NONE"
+            # annotations = dataset["annotations"]
+            # if ((15900 <= len(document_text)) and (len(document_text) <= 16000)) and (annotations[0]["long_answer"]) and (len(annotations[0]["short_answers"]) >= 1) and (annotations[0]["yes_no_answer"] == "NONE"):
+
+            title = extract_title(document_text)
+            question_text = dataset["question_text"]
+            extracted_document_texts = extract_text_from_p(document_text)
+
+            # filter
+            banned_text_list = [" ", " . ", "<", "  "]
+            extracted_document_texts = [text for text in extracted_document_texts if (text not in banned_text_list) and (len(text) >= 30)] # filter unimportant document_text
+            extracted_document_texts = list(set(extracted_document_texts)) # deduplicate
+
+            document_text_tokens = document_text.split()  # tokenize document_text
+
+            long_answer_info = dataset["annotations"][0]["long_answer"]
+            short_answers_info = dataset["annotations"][0]["short_answers"]
+
+            short_answers = []
+            long_answer = " ".join(document_text_tokens[long_answer_info['start_token']:long_answer_info['end_token']])
+            long_answer = extract_text_from_p(long_answer)[0] # delete P tag from long_answer
+            for short_answer_info in short_answers_info:
+                short_answer = document_text_tokens[short_answer_info['start_token']:short_answer_info['end_token']]
+                short_answers.append(" ".join(short_answer))
+
+            indices_list = get_excluded_indices(extracted_document_texts, long_answer)
+            if len(indices_list) > 7:
+                formatted_data_dict = {
+                    "title": title,
+                    "document_text": extracted_document_texts,
+                    "related_information": indices_list,
+                    "question_text": question_text,
+                    "annotations": {
+                        "yes_no_answer": "NONE",
+                        "long_answer": long_answer,
+                        "short_answers": short_answers
+                    },
+                    "document_url": dataset["document_url"],
+                    "example_id": f"{index}_rel"
+                }
+                long_datasets.append(formatted_data_dict)
+
+    formatted_datasets = random.sample(long_datasets, 100)
+    print(len(formatted_datasets))
+    save_json(output_file, formatted_datasets)
+
 def sample_data(input_file, output_file):
     with open(input_file, "r") as file:
         formatted_datasets = []
@@ -169,40 +228,30 @@ def sample_data(input_file, output_file):
         save_json(output_file, formatted_datasets)
 
 
+
+
 def get_detailed_instruct(task_description: str, query: str) -> str:
     return f'Instruct: {task_description}\nQuery: {query}'
 
-def format_to_vector_dict(vector_id: str, values: list, metadata: dict):
-    return {
-        "id": vector_id,
-        "values": values,
-        "metadata": metadata
-    }
 
-def store_vector_to_pinecone(document_texts):
-    vectors = []
-    for i in range(len(document_texts)):
-        values = get_embedding(document_texts[i])
-        vector_id = f"{i}" # id는 반드시 str이어야 함
-        metadata = {
-            "rel_document_text_index": i
-        }
-        vector_dict = format_to_vector_dict(vector_id, values, metadata)
-        vectors.append(vector_dict)
-    store_vector(vectors)
-
-
-def save_unrel(rel_data_path, unrel_data_path):
+def save_unrel(rel_data_path, unrel_data_path, save_to_vectordb):
     with open(rel_data_path, 'r') as rel:
         rel_datas = json.load(rel)
+        rel_document_texts = []
         unrel_datas = []
-        topk=100
+        topk = 100
 
-        for index, rel_data in tqdm(enumerate(rel_datas)):
+        if save_to_vectordb:
+            for rel_data in tqdm(rel_datas, desc="Saving to vectorDB.."):
+                rel_document_texts.append(rel_data["document_text"])
+                store_vector_to_pinecone(rel_document_texts, "documents")
+            print("Saved to vectorDB successfully!")
+
+        for index, rel_data in tqdm(enumerate(rel_datas), desc="Retrieving unrelated documents.."):
             question_text = rel_data["question_text"]
             # retrieve unsimilar document
             question_text_embedding = get_embedding(question_text)
-            unrelated_data_index = get_unrelated_data(question_text_embedding, topk=topk)
+            unrelated_data_index = get_unrelated_data(question_text_embedding, topk=topk, namespace="documents")
             unrelated_document = rel_datas[unrelated_data_index]["document_text"]
             unrelated_document_url = rel_datas[unrelated_data_index]["document_url"]
             unrel_data_dict = {
@@ -423,6 +472,19 @@ def check_duplicated(input_file_path):
                 title_list.append(title)
 
 
+def get_paragraph_num_statistics(file_name):
+    with open(file_name, 'r') as f:
+        datasets = json.load(f)
+        paragraphs_len_list = []
+        for dataset in datasets:
+            paragraphs = dataset["document_text"]
+            paragraphs_len_list.append(len(paragraphs))
+
+        print(f"MAX: {max(paragraphs_len_list)}")
+        print(f"MIN: {min(paragraphs_len_list)}")
+        print(f"AVG: {sum(paragraphs_len_list) / len(paragraphs_len_list)}\n")
+
+
 if __name__ == "__main__":
     source_file = "/data/koo/datasets/long_context/v1.0-simplified_simplified-nq-train.jsonl"
     filtered_data_path = "/data/yjoonjang/datasets/long_context_dev/v1.0-simlified-simplified-nq-train-len=16k.json" # document_text 길이가 15.9K 이상 16K 이하인 문서들만 + long_answer 답이 <P> 태그로 시작하는 것들만
@@ -439,8 +501,8 @@ if __name__ == "__main__":
     mixed_data_8k_path = "/data/yjoonjang/datasets/long_context/8k_mixed.json"
     mixed_data_4k_path = "/data/yjoonjang/datasets/long_context/4k_mixed.json"
 
-    # save_rel(filtered_data_path, rel_data_16k_path)
-    # save_unrel(rel_data_16k_path, unrel_data_16k_path)
+    # save_long_rel(filtered_data_path, rel_data_16k_path)
+    # save_unrel(rel_data_16k_path, unrel_data_16k_path, save_to_vectordb=False)
     # save_mixed(rel_data_16k_path, unrel_data_16k_path, mixed_data_16k_path, random_seed=42)
 
     # save_8k_4k(rel_data_16k_path, unrel_data_16k_path, rel_data_8k_path, unrel_data_8k_path, rel_data_4k_path, unrel_data_4k_path)
@@ -448,13 +510,14 @@ if __name__ == "__main__":
     # save_mixed(rel_data_4k_path, unrel_data_4k_path, mixed_data_4k_path, random_seed=42)
 
     # Check if duplicated
-    base_dir = "/data/yjoonjang/datasets/long_context"
-    for file_name in os.listdir(base_dir):
-        print(f"Checking {file_name}...")
-        file_path = os.path.join(base_dir, file_name)
-        # check_duplicated(file_path)
-        get_document_length_statistics(file_path)
-        print("\n\n")
+    # base_dir = "/data/yjoonjang/datasets/long_context"
+    # for file_name in os.listdir(base_dir):
+    #     print(f"Checking {file_name}...")
+    #     file_path = os.path.join(base_dir, file_name)
+    #     check_duplicated(file_path)
+    #     get_paragraph_num_statistics(file_path)
+        # get_document_length_statistics(file_path)
+        # print("\n\n")
 
 
 
