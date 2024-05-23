@@ -500,6 +500,7 @@ if __name__ == "__main__":
     mixed_data_16k_path = "/data/yjoonjang/datasets/long_context/16k_mixed.json"
     mixed_data_8k_path = "/data/yjoonjang/datasets/long_context/8k_mixed.json"
     mixed_data_4k_path = "/data/yjoonjang/datasets/long_context/4k_mixed.json"
+    rel_data_8k_contriever_path = "/data/yjoonjang/datasets/long_context_contriever/8k_rel.json"
 
     # save_long_rel(filtered_data_path, rel_data_16k_path)
     # save_unrel(rel_data_16k_path, unrel_data_16k_path, save_to_vectordb=False)
@@ -510,17 +511,43 @@ if __name__ == "__main__":
     # save_mixed(rel_data_4k_path, unrel_data_4k_path, mixed_data_4k_path, random_seed=42)
 
     # Check if duplicated
-    # base_dir = "/data/yjoonjang/datasets/long_context"
-    # for file_name in os.listdir(base_dir):
-    #     print(f"Checking {file_name}...")
-    #     file_path = os.path.join(base_dir, file_name)
-    #     check_duplicated(file_path)
-    #     get_paragraph_num_statistics(file_path)
+    base_dir = "/data/yjoonjang/datasets/long_context"
+    for file_name in os.listdir(base_dir):
+        print(f"Checking {file_name}...")
+        file_path = os.path.join(base_dir, file_name)
+        # check_duplicated(file_path)
+        get_paragraph_num_statistics(file_path)
         # get_document_length_statistics(file_path)
-        # print("\n\n")
+        print("\n\n")
 
-
-
+    # with open(rel_data_4k_path, 'r') as f, open(rel_data_16k_path, 'r') as rel_16k:
+    #     new_dataset = []
+    #     datasets_4k = json.load(f)
+    #     datasets_16k = json.load(rel_16k)
+    #     for index, dataset_4k in enumerate(datasets_4k):
+    #         if (len(dataset_4k["related_information"]) < 2):
+    #             documents_4k = datasets_4k[index]["document_text"]
+    #             documents_16k = datasets_16k[index]["document_text"]
+    #             gold = datasets_16k[index]["annotations"]["long_answer"]
+    #             documents_16k.remove(gold)
+    #             for paragraph_16k in documents_16k:
+    #                 if paragraph_16k not in documents_4k:
+    #                     documents_4k.append(paragraph_16k)
+    #                     break
+    #             related_information = get_excluded_indices(documents_4k, gold)
+    #             new_dict = {
+    #                 "title": dataset_4k["title"],
+    #                 "document_text": documents_4k,
+    #                 "question_text": dataset_4k["question_text"],
+    #                 "annotations": dataset_4k["annotations"],
+    #                 "document_url": dataset_4k["document_url"],
+    #                 "example_id": dataset_4k["example_id"],
+    #                 "related_information": related_information
+    #             }
+    #             new_dataset.append(new_dict)
+    #         else:
+    #             new_dataset.append(dataset_4k)
+    #     save_json(rel_data_4k_path, new_dataset)
 
 
 
