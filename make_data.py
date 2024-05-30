@@ -473,6 +473,7 @@ def check_duplicated(input_file_path):
 
 
 def get_paragraph_num_statistics(file_name):
+    print(f"Getting paragraph num from {file_name}")
     with open(file_name, 'r') as f:
         datasets = json.load(f)
         paragraphs_len_list = []
@@ -516,8 +517,8 @@ if __name__ == "__main__":
         print(f"Checking {file_name}...")
         file_path = os.path.join(base_dir, file_name)
         # check_duplicated(file_path)
-        get_paragraph_num_statistics(file_path)
-        # get_document_length_statistics(file_path)
+        # get_paragraph_num_statistics(file_path)
+        get_document_length_statistics(file_path)
         print("\n\n")
 
     # with open(rel_data_4k_path, 'r') as f, open(rel_data_16k_path, 'r') as rel_16k:
