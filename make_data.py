@@ -503,6 +503,33 @@ if __name__ == "__main__":
     mixed_data_4k_path = "/data/yjoonjang/datasets/long_context/4k_mixed.json"
     rel_data_8k_contriever_path = "/data/yjoonjang/datasets/long_context_contriever/8k_rel.json"
 
+    with open(filtered_data_path) as f:
+        dataset = json.load(f)
+    sentence_length_list = []
+    paragraph_length_list = []
+    sentences = []
+    for data in tqdm(dataset):
+        document_text = data["document_text"]
+
+        paragraphs = extract_text_from_p(document_text)
+        for paragraph in paragraphs:
+            paragraph_length_list.append(len(paragraph))
+            sentences_per_paragraph = paragraph.split(".")
+            sentences.extend(sentences_per_paragraph)
+
+        for i, sentence in enumerate(sentences):
+            sentence_length_list.append(len(sentence))
+
+    print("Sentence")
+    print(f"MAX: {max(sentence_length_list)}")
+    print(f"MIN: {min(sentence_length_list)}")
+    print(f"AVG: {sum(sentence_length_list) / len(sentence_length_list)}\n")
+    print("=========")
+    print("Paragraph")
+    print(f"MAX: {max(paragraph_length_list)}")
+    print(f"MIN: {min(paragraph_length_list)}")
+    print(f"AVG: {sum(paragraph_length_list) / len(paragraph_length_list)}\n")
+
     # save_long_rel(filtered_data_path, rel_data_16k_path)
     # save_unrel(rel_data_16k_path, unrel_data_16k_path, save_to_vectordb=False)
     # save_mixed(rel_data_16k_path, unrel_data_16k_path, mixed_data_16k_path, random_seed=42)
@@ -511,15 +538,14 @@ if __name__ == "__main__":
     # save_mixed(rel_data_8k_path, unrel_data_8k_path, mixed_data_8k_path, random_seed=42)
     # save_mixed(rel_data_4k_path, unrel_data_4k_path, mixed_data_4k_path, random_seed=42)
 
-    # Check if duplicated
-    base_dir = "/data/yjoonjang/datasets/long_context"
-    for file_name in os.listdir(base_dir):
-        print(f"Checking {file_name}...")
-        file_path = os.path.join(base_dir, file_name)
-        # check_duplicated(file_path)
-        # get_paragraph_num_statistics(file_path)
-        get_document_length_statistics(file_path)
-        print("\n\n")
+    # base_dir = "/data/yjoonjang/datasets/long_context"
+    # for file_name in os.listdir(base_dir):
+    #     print(f"Checking {file_name}...")
+    #     file_path = os.path.join(base_dir, file_name)
+    #     # check_duplicated(file_path)
+    #     # get_paragraph_num_statistics(file_path)
+    #     get_document_length_statistics(file_path)
+    #     print("\n\n")
 
     # with open(rel_data_4k_path, 'r') as f, open(rel_data_16k_path, 'r') as rel_16k:
     #     new_dataset = []
